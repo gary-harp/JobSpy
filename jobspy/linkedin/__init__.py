@@ -112,26 +112,6 @@ class LinkedIn(Scraper):
         job_list = job_list[: scraper_input.results_wanted]
         return JobResponse(jobs=job_list)
 
-    def send_request_sync(self, request_params: dict) -> Optional[Response]:
-        try:
-            response = self.session.request(**request_params)
-            if response.status_code not in range(200, 400):
-                if response.status_code == 429:
-                    err = (
-                        f"429 Response - Blocked by LinkedIn for too many requests"
-                    )
-                else:
-                    err = f"LinkedIn response status code {response.status_code}"
-                    err += f" - {response.text}"
-                log.error(err)
-            return response
-        except Exception as e:
-            if "Proxy responded with" in str(e):
-                log.error(f"LinkedIn: Bad proxy")
-            else:
-                log.error(f"LinkedIn: {str(e)}")
-            return None
-
 
     def get_job_ads_page(self,
                          scraper_input: ScraperInput,
@@ -145,40 +125,6 @@ class LinkedIn(Scraper):
         return self.parse_search_response(response,
                                           scraper_input,
                                           can_skip, max_page_fetch)
-
-    def parse_search_response(self,
-                              response: Response,
-                              scraper_input: ScraperInput,
-                              can_skip: CanSkipJobPost,
-                              max_page_fetch: Optional[int] = None) -> List[JobPost]:
-        seen_ids = set()
-        job_list = []
-        soup = BeautifulSoup(response.text, "html.parser")
-        job_cards = soup.find_all("div", class_="base-search-card")
-        if len(job_cards) == 0:
-            return job_list
-
-        for job_card in job_cards:
-            href_tag = job_card.find("a", class_="base-card__full-link")
-            if href_tag and "href" in href_tag.attrs:
-                href = href_tag.attrs["href"].split("?")[0]
-                job_id = href.split("-")[-1]
-                if can_skip.can_skip(job_id):
-                    continue
-                if job_id in seen_ids:
-                    continue
-                seen_ids.add(job_id)
-
-                try:
-                    fetch_desc = scraper_input.linkedin_fetch_description
-                    job_post = self._process_job(job_card, job_id, fetch_desc)
-                    if job_post:
-                        job_list.append(job_post)
-                    if max_page_fetch is not None and len(job_list) >= max_page_fetch:
-                        break
-                except Exception as e:
-                    raise LinkedInException(str(e))
-        return job_list
 
     def build_search_request(self,
                              scraper_input: ScraperInput,
@@ -216,6 +162,60 @@ class LinkedIn(Scraper):
             'timeout' : 10
         }
         return request_params
+
+    def send_request_sync(self, request_params: dict) -> Optional[Response]:
+        try:
+            response = self.session.request(**request_params)
+            if response.status_code not in range(200, 400):
+                if response.status_code == 429:
+                    err = (
+                        f"429 Response - Blocked by LinkedIn for too many requests"
+                    )
+                else:
+                    err = f"LinkedIn response status code {response.status_code}"
+                    err += f" - {response.text}"
+                log.error(err)
+            return response
+        except Exception as e:
+            if "Proxy responded with" in str(e):
+                log.error(f"LinkedIn: Bad proxy")
+            else:
+                log.error(f"LinkedIn: {str(e)}")
+            return None
+
+    def parse_search_response(self,
+                              response: Response,
+                              scraper_input: ScraperInput,
+                              can_skip: CanSkipJobPost,
+                              max_page_fetch: Optional[int] = None) -> List[JobPost]:
+        seen_ids = set()
+        job_list = []
+        soup = BeautifulSoup(response.text, "html.parser")
+        job_cards = soup.find_all("div", class_="base-search-card")
+        if len(job_cards) == 0:
+            return job_list
+
+        for job_card in job_cards:
+            href_tag = job_card.find("a", class_="base-card__full-link")
+            if href_tag and "href" in href_tag.attrs:
+                href = href_tag.attrs["href"].split("?")[0]
+                job_id = href.split("-")[-1]
+                if can_skip.can_skip(job_id):
+                    continue
+                if job_id in seen_ids:
+                    continue
+                seen_ids.add(job_id)
+
+                try:
+                    fetch_desc = scraper_input.linkedin_fetch_description
+                    job_post = self._process_job(job_card, job_id, fetch_desc)
+                    if job_post:
+                        job_list.append(job_post)
+                    if max_page_fetch is not None and len(job_list) >= max_page_fetch:
+                        break
+                except Exception as e:
+                    raise LinkedInException(str(e))
+        return job_list
 
 
     def _process_job(
