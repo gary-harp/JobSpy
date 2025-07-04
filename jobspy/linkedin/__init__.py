@@ -11,6 +11,7 @@ import regex as re
 import requests
 from bs4 import BeautifulSoup
 from bs4.element import Tag
+from requests import Response
 
 from jobspy.can_skip_job_post import CanSkipJobPost
 from jobspy.exception import LinkedInException
@@ -111,14 +112,7 @@ class LinkedIn(Scraper):
         job_list = job_list[: scraper_input.results_wanted]
         return JobResponse(jobs=job_list)
 
-    def get_job_ads_page(self,
-                         scraper_input: ScraperInput,
-                         start: int,
-                         can_skip: CanSkipJobPost,
-                         max_page_fetch: Optional[int] = None) -> List[JobPost]:
-        seen_ids = set()
-        job_list = []
-        request_params = self.build_search_request(scraper_input, start)
+    def send_request_sync(self, request_params: dict) -> Optional[Response]:
         try:
             response = self.session.request(**request_params)
             if response.status_code not in range(200, 400):
@@ -130,14 +124,35 @@ class LinkedIn(Scraper):
                     err = f"LinkedIn response status code {response.status_code}"
                     err += f" - {response.text}"
                 log.error(err)
-                return job_list
+            return response
         except Exception as e:
             if "Proxy responded with" in str(e):
                 log.error(f"LinkedIn: Bad proxy")
             else:
                 log.error(f"LinkedIn: {str(e)}")
-            return job_list
+            return None
 
+
+    def get_job_ads_page(self,
+                         scraper_input: ScraperInput,
+                         start: int,
+                         can_skip: CanSkipJobPost,
+                         max_page_fetch: Optional[int] = None) -> List[JobPost]:
+        request_params = self.build_search_request(scraper_input, start)
+        response = self.send_request_sync(request_params)
+        if response is None:
+            return []
+        return self.parse_search_response(response,
+                                          scraper_input,
+                                          can_skip, max_page_fetch)
+
+    def parse_search_response(self,
+                              response: Response,
+                              scraper_input: ScraperInput,
+                              can_skip: CanSkipJobPost,
+                              max_page_fetch: Optional[int] = None) -> List[JobPost]:
+        seen_ids = set()
+        job_list = []
         soup = BeautifulSoup(response.text, "html.parser")
         job_cards = soup.find_all("div", class_="base-search-card")
         if len(job_cards) == 0:
