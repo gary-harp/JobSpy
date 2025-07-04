@@ -8,6 +8,7 @@ from typing import Optional, List
 from urllib.parse import urlparse, urlunparse, unquote
 
 import regex as re
+import requests
 from bs4 import BeautifulSoup
 from bs4.element import Tag
 
@@ -117,38 +118,9 @@ class LinkedIn(Scraper):
                          max_page_fetch: Optional[int] = None) -> List[JobPost]:
         seen_ids = set()
         job_list = []
-        seconds_old = (
-            scraper_input.hours_old * 3600 if scraper_input.hours_old else None
-        )
-        params = {
-            "keywords": scraper_input.search_term,
-            "location": scraper_input.location,
-            "distance": scraper_input.distance,
-            "f_WT": 2 if scraper_input.is_remote else None,
-            "f_JT": (
-                job_type_code(scraper_input.job_type)
-                if scraper_input.job_type
-                else None
-            ),
-            "pageNum": 0,
-            "start": start,
-            "f_AL": "true" if scraper_input.easy_apply else None,
-            "f_C": (
-                ",".join(map(str, scraper_input.linkedin_company_ids))
-                if scraper_input.linkedin_company_ids
-                else None
-            ),
-        }
-        if seconds_old is not None:
-            params["f_TPR"] = f"r{seconds_old}"
-
-        params = {k: v for k, v in params.items() if v is not None}
+        request_params = self.build_search_request(scraper_input, start)
         try:
-            response = self.session.get(
-                f"{self.base_url}/jobs-guest/jobs/api/seeMoreJobPostings/search?",
-                params=params,
-                timeout=10,
-            )
+            response = self.session.request(**request_params)
             if response.status_code not in range(200, 400):
                 if response.status_code == 429:
                     err = (
@@ -192,6 +164,43 @@ class LinkedIn(Scraper):
                 except Exception as e:
                     raise LinkedInException(str(e))
         return job_list
+
+    def build_search_request(self,
+                             scraper_input: ScraperInput,
+                             start: int) -> dict:
+        seconds_old = (
+            scraper_input.hours_old * 3600 if scraper_input.hours_old else None
+        )
+        params = {
+            "keywords": scraper_input.search_term,
+            "location": scraper_input.location,
+            "distance": scraper_input.distance,
+            "f_WT": 2 if scraper_input.is_remote else None,
+            "f_JT": (
+                job_type_code(scraper_input.job_type)
+                if scraper_input.job_type
+                else None
+            ),
+            "pageNum": 0,
+            "start": start,
+            "f_AL": "true" if scraper_input.easy_apply else None,
+            "f_C": (
+                ",".join(map(str, scraper_input.linkedin_company_ids))
+                if scraper_input.linkedin_company_ids
+                else None
+            ),
+        }
+        if seconds_old is not None:
+            params["f_TPR"] = f"r{seconds_old}"
+
+        params = {k: v for k, v in params.items() if v is not None}
+        request_params = {
+            'method' : 'GET',
+            'url': f"{self.base_url}/jobs-guest/jobs/api/seeMoreJobPostings/search?",
+            'params': params,
+            'timeout' : 10
+        }
+        return request_params
 
 
     def _process_job(
