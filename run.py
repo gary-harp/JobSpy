@@ -1,0 +1,62 @@
+import csv
+import os
+from pathlib import Path
+from jobspy import scrape_jobs, ScraperInput, Site, Country, LinkedIn
+from jobspy.is_seen import IsSeen
+
+SCRIPT_PATH = Path(os.path.dirname(os.path.abspath(__file__)))
+DATA_DIR = SCRIPT_PATH.joinpath('output')
+
+
+# https://www.linkedin.com/jobs/search/
+# f_CM=5 Career growth and learning
+# f_CM=3 Work-life balance
+
+
+def scrape_test_jobs():
+    jobs = scrape_jobs(
+        site_name=["linkedin"],
+        search_term="software engineer",
+        location="Israel",
+        results_wanted=20,
+        hours_old=72,
+        linkedin_fetch_description=True,
+        verbose=2
+
+        # linkedin_fetch_description=True # gets more info such as description, direct job url (slower)
+        # proxies=["208.195.175.46:65095", "208.195.175.45:65095", "localhost"],
+    )
+    print(f"Found {len(jobs)} jobs")
+    print(jobs.head())
+    jobs.to_csv(DATA_DIR.joinpath("test-jobs.csv"), quoting=csv.QUOTE_NONNUMERIC, escapechar="\\", index=False)  # to_excel
+
+
+def fetch_page():
+    scraper_input = ScraperInput(
+        site_type=[Site.LINKEDIN],
+        #country=Country.ISRAEL,
+        search_term="engineer",
+        #google_search_term=google_search_term,
+        location="Israel",
+        #distance=distance,
+        #is_remote=is_remote,
+        #job_type=job_type,
+        #easy_apply=easy_apply,
+        #description_format=description_format,
+        linkedin_fetch_description=False,
+        results_wanted=20,
+        #linkedin_company_ids=linkedin_company_ids,
+        #offset=offset,
+        #hours_old=hours_old,
+    )
+
+    can_skip = IsSeen()
+    scraper = LinkedIn()
+
+    results = scraper.get_job_ads_page(scraper_input, 0, can_skip)
+    print("wtf")
+
+
+if __name__ == "__main__":
+    #scrape_test_jobs()
+    fetch_page()
