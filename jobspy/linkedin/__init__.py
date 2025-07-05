@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import math
 import json
 import random
@@ -136,6 +137,34 @@ class LinkedIn(Scraper):
                 job_details = self._get_job_details_sync(basic_info, scraper_input)
                 basic_info.update(job_details)
         result = [JobPost(**basic_info) for basic_info in basic_job_infos]
+        return result
+
+    async def get_job_ads_page(self,
+                              scraper_input: ScraperInput,
+                              start: int,
+                              can_skip: CanSkipJobPost,
+                              max_page_fetch: Optional[int] = None) -> List[JobPost]:
+        request_params = self._build_search_request(scraper_input, start)
+        response = await self._send_request_async(request_params)
+        if response is None:
+            return []
+        basic_job_infos = self._parse_search_response(response,
+                                           scraper_input,
+                                           can_skip, max_page_fetch)
+        fetch_desc = scraper_input.linkedin_fetch_description
+        fetch_results = []
+        if fetch_desc:
+            fetch_tasks = []
+            for basic_info in basic_job_infos:
+                fetch_tasks.append(self._get_job_details_async(basic_info, scraper_input))
+            fetch_results = await asyncio.gather(*fetch_tasks)
+        result = []
+        for i in range(len(basic_job_infos)):
+            basic_info = basic_job_infos[i]
+            if fetch_desc:
+                job_details = fetch_results[i]
+                basic_info.update(job_details)
+            result.append(JobPost(**basic_info))
         return result
 
     def _build_search_request(self,
@@ -350,7 +379,7 @@ class LinkedIn(Scraper):
 
         basic_job_info = {
             "id" :f"{job_id}",
-            "title" : "title",
+            "title" : title,
             "company_name" : company,
             "company_url" : company_url,
             "location" : location,
@@ -365,20 +394,42 @@ class LinkedIn(Scraper):
     def _get_job_details_sync(self, basic_job_info: dict, scraper_input: ScraperInput) -> dict:
         """
         Retrieves job description and other job details by going to the job page url
-        :param job_page_url:
         :return: dict
         """
-        job_id = basic_job_info['id']
+        request_params = {
+            'method': 'GET',
+            'url': f"{self.base_url}/jobs/view/{basic_job_info['id']}",
+            'timeout' : 5
+        }
         try:
-            response = self.session.get(
-                f"{self.base_url}/jobs/view/{job_id}", timeout=5
-            )
+            response = self.session.request(**request_params)
             response.raise_for_status()
-        except:
+        except Exception as ex:
+            log.error(ex, f"failed to get job details. Job Id: {basic_job_info['id']}")
             return {}
-        if "linkedin.com/signup" in response.url:
-            return {}
+        return self._parse_job_details_response(basic_job_info, response, scraper_input)
 
+    async def _get_job_details_async(self, basic_job_info: dict, scraper_input: ScraperInput) -> dict:
+        """
+        Retrieves job description and other job details by going to the job page url
+        :return: dict
+        """
+        request_params = {
+            'method': 'GET',
+            'url': f"{self.base_url}/jobs/view/{basic_job_info['id']}",
+            'timeout' : 5
+        }
+        try:
+            response = await self.session.request_async(**request_params)
+            response.raise_for_status()
+        except Exception as ex:
+            log.error(ex, f"failed to get job details. Job Id: {basic_job_info['id']}")
+            return {}
+        return self._parse_job_details_response(basic_job_info, response, scraper_input)
+
+    def _parse_job_details_response(self, basic_job_info, response: Response, scraper_input) -> Optional[dict]:
+        if "linkedin.com/signup" in str(response.url):
+            return {}
         soup = BeautifulSoup(response.text, "html.parser")
         div_content = soup.find(
             "div", class_=lambda x: x and "show-more-less-html__markup" in x
@@ -389,11 +440,9 @@ class LinkedIn(Scraper):
             description = div_content.prettify(formatter="html")
             if scraper_input.description_format == DescriptionFormat.MARKDOWN:
                 description = markdown_converter(description)
-
         h3_tag = soup.find(
             "h3", text=lambda text: text and "Job function" in text.strip()
         )
-
         job_function = None
         if h3_tag:
             job_function_span = h3_tag.find_next(
@@ -401,7 +450,6 @@ class LinkedIn(Scraper):
             )
             if job_function_span:
                 job_function = job_function_span.text.strip()
-
         company_logo = (
             logo_image.get("data-delayed-url")
             if (logo_image := soup.find("img", {"class": "artdeco-entity-image"}))

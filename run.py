@@ -33,7 +33,7 @@ def scrape_test_jobs():
     jobs.to_csv(DATA_DIR.joinpath("test-jobs.csv"), quoting=csv.QUOTE_NONNUMERIC, escapechar="\\", index=False)  # to_excel
 
 
-def fetch_page():
+async def fetch_page():
     scraper_input = ScraperInput(
         site_type=[Site.LINKEDIN],
         #country=Country.ISRAEL,
@@ -53,12 +53,13 @@ def fetch_page():
     )
 
     can_skip = IsSeen()
-    scraper = LinkedIn()
+    scraper = LinkedIn(is_async=True)
     ad_count = 1
     ad_dict = dict()
     start = 0
     for i in range(1):
-        results = scraper.get_job_ads_page_sync(scraper_input, start, can_skip)
+        #results = scraper.get_job_ads_page_sync(scraper_input, start, can_skip)
+        results = await scraper.get_job_ads_page(scraper_input, start, can_skip)
         received_ads = []
         for job in results:
             ad_number = ad_dict.get(job.id, None)
@@ -86,4 +87,4 @@ if __name__ == "__main__":
     #scrape_test_jobs()
     #fetch_page()
     #fetch_company()
-    asyncio.run(fetch_company())
+    asyncio.run(fetch_page())
