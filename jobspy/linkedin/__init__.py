@@ -130,7 +130,7 @@ class LinkedIn(Scraper):
         fetch_desc = scraper_input.linkedin_fetch_description
         if fetch_desc:
             for basic_info in basic_job_infos:
-                job_details = self._get_job_details_sync(basic_info)
+                job_details = self._get_job_details_sync(basic_info, scraper_input)
                 basic_info.update(job_details)
         result = [JobPost(**basic_info) for basic_info in basic_job_infos]
         return result
@@ -332,7 +332,7 @@ class LinkedIn(Scraper):
 
         return basic_job_info
 
-    def _get_job_details_sync(self, basic_job_info: dict) -> dict:
+    def _get_job_details_sync(self, basic_job_info: dict, scraper_input: ScraperInput) -> dict:
         """
         Retrieves job description and other job details by going to the job page url
         :param job_page_url:
@@ -357,7 +357,7 @@ class LinkedIn(Scraper):
         if div_content is not None:
             div_content = remove_attributes(div_content)
             description = div_content.prettify(formatter="html")
-            if self.scraper_input.description_format == DescriptionFormat.MARKDOWN:
+            if scraper_input.description_format == DescriptionFormat.MARKDOWN:
                 description = markdown_converter(description)
 
         h3_tag = soup.find(

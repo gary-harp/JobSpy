@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 from jobspy import scrape_jobs, ScraperInput, Site, Country, LinkedIn
 from jobspy.is_seen import IsSeen
+from jobspy.model import DescriptionFormat
 
 SCRIPT_PATH = Path(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = SCRIPT_PATH.joinpath('output')
@@ -42,8 +43,8 @@ def fetch_page():
         #is_remote=is_remote,
         #job_type=job_type,
         #easy_apply=easy_apply,
-        #description_format=description_format,
-        linkedin_fetch_description=False,
+        description_format=DescriptionFormat.MARKDOWN,
+        linkedin_fetch_description=True,
         results_wanted=20,
         #linkedin_company_ids=linkedin_company_ids,
         #offset=offset,
@@ -81,5 +82,5 @@ def fetch_company():
 
 if __name__ == "__main__":
     #scrape_test_jobs()
-    #fetch_page()
-    fetch_company()
+    fetch_page()
+    #fetch_company()
