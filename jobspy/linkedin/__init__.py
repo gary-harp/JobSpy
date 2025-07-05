@@ -9,7 +9,6 @@ from typing import Optional, List
 from urllib.parse import urlparse, urlunparse, unquote
 
 import regex as re
-import requests
 from bs4 import BeautifulSoup
 from bs4.element import Tag
 from requests import Response
@@ -59,12 +58,15 @@ class LinkedIn(Scraper):
     jobs_per_page = 25
 
     def __init__(
-        self, proxies: list[str] | str | None = None, ca_cert: str | None = None
+        self,
+            proxies: list[str] | str | None = None,
+            ca_cert: str | None = None,
+            is_async: bool = False
     ):
         """
         Initializes LinkedInScraper with the LinkedIn job search url
         """
-        super().__init__(Site.LINKEDIN, proxies=proxies, ca_cert=ca_cert)
+        super().__init__(Site.LINKEDIN, proxies=proxies, ca_cert=ca_cert, is_async=is_async)
         self.session = create_session(
             proxies=self.proxies,
             ca_cert=ca_cert,
@@ -72,6 +74,7 @@ class LinkedIn(Scraper):
             has_retry=True,
             delay=5,
             clear_cookies=True,
+            is_async=is_async
         )
         self.session.headers.update(headers)
         self.scraper_input = None
@@ -226,6 +229,13 @@ class LinkedIn(Scraper):
         return job_list
 
     def get_company_info_sync(self, company_name: str, company_url) -> Optional[Company]:
+        request_params = self._build_company_info_request(company_name, company_url)
+        response = self._send_request_sync(request_params)
+        if response is None:
+            return None
+        return self._parse_company_response(company_name, response)
+
+    async def get_company_info(self, company_name: str, company_url) -> Optional[Company]:
         request_params = self._build_company_info_request(company_name, company_url)
         response = self._send_request_sync(request_params)
         if response is None:

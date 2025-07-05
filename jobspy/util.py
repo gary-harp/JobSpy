@@ -9,8 +9,9 @@ import requests
 import tls_client
 import urllib3
 from markdownify import markdownify as md
+from requests import Response
 from requests.adapters import HTTPAdapter, Retry
-
+from typing import MutableMapping, TypeAlias, Any
 from jobspy.model import CompensationInterval, JobType, Site
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -27,6 +28,10 @@ def create_logger(name: str):
         console_handler.setFormatter(formatter)
         logger.addHandler(console_handler)
     return logger
+
+_Verify: TypeAlias = bool | str
+
+
 
 
 class RotatingProxySession:
@@ -103,6 +108,38 @@ class TLSRotating(RotatingProxySession, tls_client.Session):
         return response
 
 
+class SessionAdapter:
+
+    _instance: RequestsRotating | TLSRotating
+
+    def __init__(self, instance: RequestsRotating | TLSRotating):
+        self._instance = instance
+
+
+    @property
+    def headers(self) -> MutableMapping[str, str | bytes]:
+        return self._instance.headers
+
+    @headers.setter
+    def headers(self, value: MutableMapping[str, str | bytes]):
+        self._instance.headers = value
+
+    @property
+    def verify(self) -> _Verify:
+        return self._instance.verify
+
+    @verify.setter
+    def verify(self, value: _Verify):
+        self._instance.verify = value
+
+    def request(self, method, url, **kwargs) -> Response:
+        return self._instance.request(method, url, **kwargs)
+
+
+    def get(self, url: str, **kwargs: Any) -> Response:
+        return self._instance.get(url, **kwargs)
+
+
 def create_session(
     *,
     proxies: dict | str | None = None,
@@ -111,12 +148,15 @@ def create_session(
     has_retry: bool = False,
     delay: int = 1,
     clear_cookies: bool = False,
-) -> requests.Session:
+    is_async: bool = False
+) -> SessionAdapter:
     """
     Creates a requests session with optional tls, proxy, and retry settings.
     :return: A session object
     """
     if is_tls:
+        if is_async:
+            raise Exception("Not implemented")
         session = TLSRotating(proxies=proxies)
     else:
         session = RequestsRotating(
@@ -128,7 +168,7 @@ def create_session(
 
     if ca_cert:
         session.verify = ca_cert
-
+    session = SessionAdapter(session)
     return session
 
 

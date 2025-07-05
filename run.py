@@ -1,3 +1,4 @@
+import asyncio
 import csv
 import os
 from pathlib import Path
@@ -70,17 +71,19 @@ def fetch_page():
         start = 1
     print("wtf")
 
-def fetch_company():
+async def fetch_company():
     scraper = LinkedIn()
     name = 'microsoft'
     url = 'https://www.linkedin.com/company/microsoft'
     name = 'Ultron'
     url = 'https://www.linkedin.com/company/utron-solutions'
-    result = scraper.get_company_info_sync(name, url)
+    #result = scraper.get_company_info_sync(name, url)
+    result = await scraper.get_company_info(name, url)
     print("wtf")
 
 
 if __name__ == "__main__":
     #scrape_test_jobs()
-    fetch_page()
+    #fetch_page()
     #fetch_company()
+    asyncio.run(fetch_company())

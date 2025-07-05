@@ -320,11 +320,15 @@ class ScraperInput(BaseModel):
 
 class Scraper(ABC):
     def __init__(
-        self, site: Site, proxies: list[str] | None = None, ca_cert: str | None = None
+        self,
+            site: Site, proxies: list[str] | None = None,
+            ca_cert: str | None = None,
+            is_async: bool = False
     ):
         self.site = site
         self.proxies = proxies
         self.ca_cert = ca_cert
+        self.is_async = is_async
 
     @abstractmethod
     def scrape(self, scraper_input: ScraperInput) -> JobResponse: ...
