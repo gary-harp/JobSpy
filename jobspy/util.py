@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from itertools import cycle
@@ -142,6 +143,17 @@ class TLSRotating(RotatingProxySession, tls_client.Session):
         response.ok = response.status_code in range(200, 400)
         return response
 
+class _HTTPAIOConcurrency:
+
+    semaphore : asyncio.Semaphore
+
+    def __init__(self):
+        self.semaphore = asyncio.Semaphore(12)
+
+    def set_max_concurrent_connections(self, max_concurrent_connections: int):
+        self.semaphore = asyncio.Semaphore(max_concurrent_connections)
+
+http_aio_concurrency = _HTTPAIOConcurrency()
 
 class SessionAdapter:
 
@@ -184,13 +196,15 @@ class SessionAdapter:
     async def request_async(self, method, url, **kwargs) -> Response:
         if not self._is_async:
             raise Exception("Invalid usage. Use request")
-        return await self._instance.request(method, url, **kwargs)
+        async with http_aio_concurrency.semaphore:
+            return await self._instance.request(method, url, **kwargs)
 
 
     async def get_async(self, url: str, **kwargs: Any) -> Response:
         if not self._is_async:
             raise Exception("Invalid usage. Use get")
-        return await self._instance.get(url, **kwargs)
+        async with http_aio_concurrency.semaphore:
+            return await self._instance.get(url, **kwargs)
 
 
 def create_session(
