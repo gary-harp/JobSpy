@@ -55,7 +55,7 @@ def fetch_page():
     ad_count = 1
     ad_dict = dict()
     start = 0
-    for i in range(2):
+    for i in range(1):
         results = scraper.get_job_ads_page_sync(scraper_input, start, can_skip)
         received_ads = []
         for job in results:
@@ -71,7 +71,11 @@ def fetch_page():
 
 def fetch_company():
     scraper = LinkedIn()
-    result = scraper.get_company_info_sync("microsoft")
+    name = 'microsoft'
+    url = 'https://www.linkedin.com/company/microsoft'
+    name = 'Ultron'
+    url = 'https://www.linkedin.com/company/utron-solutions'
+    result = scraper.get_company_info_sync(name, url)
     print("wtf")
 
 

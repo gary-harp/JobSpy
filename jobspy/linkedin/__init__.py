@@ -124,9 +124,16 @@ class LinkedIn(Scraper):
         response = self._send_request_sync(request_params)
         if response is None:
             return []
-        return self._parse_search_response(response,
+        basic_job_infos = self._parse_search_response(response,
                                            scraper_input,
                                            can_skip, max_page_fetch)
+        fetch_desc = scraper_input.linkedin_fetch_description
+        if fetch_desc:
+            for basic_info in basic_job_infos:
+                job_details = self._get_job_details_sync(basic_info)
+                basic_info.update(job_details)
+        result = [JobPost(**basic_info) for basic_info in basic_job_infos]
+        return result
 
     def _build_search_request(self,
                               scraper_input: ScraperInput,
@@ -189,7 +196,7 @@ class LinkedIn(Scraper):
                                response: Response,
                                scraper_input: ScraperInput,
                                can_skip: CanSkipJobPost,
-                               max_page_fetch: Optional[int] = None) -> List[JobPost]:
+                               max_page_fetch: Optional[int] = None) -> List[dict]:
         seen_ids = set()
         job_list = []
         soup = BeautifulSoup(response.text, "html.parser")
@@ -209,28 +216,27 @@ class LinkedIn(Scraper):
                 seen_ids.add(job_id)
 
                 try:
-                    fetch_desc = scraper_input.linkedin_fetch_description
-                    job_post = self._process_job(job_card, job_id, fetch_desc)
-                    if job_post:
-                        job_list.append(job_post)
+                    basic_job_info = self._process_job(job_card, job_id)
+                    if basic_job_info:
+                        job_list.append(basic_job_info)
                     if max_page_fetch is not None and len(job_list) >= max_page_fetch:
                         break
                 except Exception as e:
                     raise LinkedInException(str(e))
         return job_list
 
-    def get_company_info_sync(self, company_name: str) -> Optional[Company]:
-        request_params = self._build_company_info_request(company_name)
+    def get_company_info_sync(self, company_name: str, company_url) -> Optional[Company]:
+        request_params = self._build_company_info_request(company_name, company_url)
         response = self._send_request_sync(request_params)
         if response is None:
             return None
         return self._parse_company_response(company_name, response)
 
 
-    def _build_company_info_request(self, company_name) -> dict:
+    def _build_company_info_request(self, company_name, company_url: str) -> dict:
         request_params = {
             'method' : 'GET',
-            'url': f"{self.base_url}/company/{company_name}",
+            'url': f"{company_url}",
             'timeout' : 10
         }
         return request_params
@@ -265,8 +271,8 @@ class LinkedIn(Scraper):
         return organization
 
     def _process_job(
-        self, job_card: Tag, job_id: str, full_descr: bool
-    ) -> Optional[JobPost]:
+        self, job_card: Tag, job_id: str
+    ) -> Optional[dict]:
         salary_tag = job_card.find("span", class_="job-search-card__salary-info")
 
         compensation = description = None
@@ -310,38 +316,29 @@ class LinkedIn(Scraper):
                 date_posted = datetime.strptime(datetime_str, "%Y-%m-%d")
             except:
                 date_posted = None
-        job_details = {}
-        if full_descr:
-            job_details = self._get_job_details(job_id)
-            description = job_details.get("description")
-        is_remote = is_job_remote(title, description, location)
+        is_remote = is_job_remote(f'{title} {location.display_location()}'.lower())
 
-        return JobPost(
-            id=f"li-{job_id}",
-            title=title,
-            company_name=company,
-            company_url=company_url,
-            location=location,
-            is_remote=is_remote,
-            date_posted=date_posted,
-            job_url=f"{self.base_url}/jobs/view/{job_id}",
-            compensation=compensation,
-            job_type=job_details.get("job_type"),
-            job_level=job_details.get("job_level", "").lower(),
-            company_industry=job_details.get("company_industry"),
-            description=job_details.get("description"),
-            job_url_direct=job_details.get("job_url_direct"),
-            emails=extract_emails_from_text(description),
-            company_logo=job_details.get("company_logo"),
-            job_function=job_details.get("job_function"),
-        )
+        basic_job_info = {
+            "id" :f"{job_id}",
+            "title" : "title",
+            "company_name" : company,
+            "company_url" : company_url,
+            "location" : location,
+            "is_remote" : is_remote,
+            "date_posted" : date_posted,
+            "job_url" : f"{self.base_url}/jobs/view/{job_id}",
+            "compensation" : compensation,
+        }
 
-    def _get_job_details(self, job_id: str) -> dict:
+        return basic_job_info
+
+    def _get_job_details_sync(self, basic_job_info: dict) -> dict:
         """
         Retrieves job description and other job details by going to the job page url
         :param job_page_url:
         :return: dict
         """
+        job_id = basic_job_info['id']
         try:
             response = self.session.get(
                 f"{self.base_url}/jobs/view/{job_id}", timeout=5
@@ -388,6 +385,8 @@ class LinkedIn(Scraper):
             "job_url_direct": self._parse_job_url_direct(soup),
             "company_logo": company_logo,
             "job_function": job_function,
+            "emails": extract_emails_from_text(description),
+            "is_remote": basic_job_info["is_remote"] or is_job_remote(description.lower())
         }
 
     def _get_location(self, metadata_card: Optional[Tag]) -> Location:
