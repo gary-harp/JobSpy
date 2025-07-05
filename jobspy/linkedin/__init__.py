@@ -195,6 +195,26 @@ class LinkedIn(Scraper):
                 log.error(f"LinkedIn: {str(e)}")
             return None
 
+    async def _send_request_async(self, request_params: dict) -> Optional[Response]:
+        try:
+            response = await self.session.request_async(**request_params)
+            if response.status_code not in range(200, 400):
+                if response.status_code == 429:
+                    err = (
+                        f"429 Response - Blocked by LinkedIn for too many requests"
+                    )
+                else:
+                    err = f"LinkedIn response status code {response.status_code}"
+                    err += f" - {response.text}"
+                log.error(err)
+            return response
+        except Exception as e:
+            if "Proxy responded with" in str(e):
+                log.error(f"LinkedIn: Bad proxy")
+            else:
+                log.error(f"LinkedIn: {str(e)}")
+            return None
+
     def _parse_search_response(self,
                                response: Response,
                                scraper_input: ScraperInput,
@@ -237,7 +257,7 @@ class LinkedIn(Scraper):
 
     async def get_company_info(self, company_name: str, company_url) -> Optional[Company]:
         request_params = self._build_company_info_request(company_name, company_url)
-        response = self._send_request_sync(request_params)
+        response = await self._send_request_async(request_params)
         if response is None:
             return None
         return self._parse_company_response(company_name, response)

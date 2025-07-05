@@ -3,11 +3,13 @@ from __future__ import annotations
 import logging
 import re
 from itertools import cycle
-
+import httpx
+import httpx_retries
 import numpy as np
 import requests
 import tls_client
 import urllib3
+from httpx_retries import RetryTransport
 from markdownify import markdownify as md
 from requests import Response
 from requests.adapters import HTTPAdapter, Retry
@@ -90,6 +92,39 @@ class RequestsRotating(RotatingProxySession, requests.Session):
                 self.proxies = {}
         return requests.Session.request(self, method, url, **kwargs)
 
+class RequestsRotatingAsync(RotatingProxySession, httpx.AsyncClient):
+    def __init__(self, proxies=None, has_retry=False, delay=1, clear_cookies=False):
+        RotatingProxySession.__init__(self, proxies=proxies)
+        httpx.AsyncClient.__init__(self, transport=self.setup_session(has_retry, delay))
+        self.clear_cookies = clear_cookies
+        self.allow_redirects = True
+
+    def setup_session(self, has_retry, delay) -> RetryTransport | None:
+        if has_retry:
+            retries = httpx_retries.Retry(
+                total=3,
+                status_forcelist=[500, 502, 503, 504, 429],
+                backoff_factor=delay,
+            )
+
+            transport = RetryTransport(retry=retries)
+            return transport
+        return None
+
+
+    async def request(self, method, url, **kwargs):
+        if self.clear_cookies:
+            self.cookies.clear()
+
+        if self.proxy_cycle:
+            next_proxy = next(self.proxy_cycle)
+            if next_proxy["http"] != "http://localhost":
+                self.proxies = next_proxy
+            else:
+                self.proxies = {}
+        return await super().request(method, url, **kwargs)
+
+
 
 class TLSRotating(RotatingProxySession, tls_client.Session):
     def __init__(self, proxies=None):
@@ -110,10 +145,13 @@ class TLSRotating(RotatingProxySession, tls_client.Session):
 
 class SessionAdapter:
 
-    _instance: RequestsRotating | TLSRotating
+    _instance: RequestsRotating | TLSRotating | RequestsRotatingAsync
 
-    def __init__(self, instance: RequestsRotating | TLSRotating):
+    _is_async: bool
+
+    def __init__(self, instance: RequestsRotating | TLSRotating | RequestsRotatingAsync):
         self._instance = instance
+        self._is_async = isinstance(self._instance, RequestsRotatingAsync)
 
 
     @property
@@ -133,11 +171,26 @@ class SessionAdapter:
         self._instance.verify = value
 
     def request(self, method, url, **kwargs) -> Response:
+        if self._is_async:
+            raise Exception("Invalid usage. Use request async")
         return self._instance.request(method, url, **kwargs)
 
 
     def get(self, url: str, **kwargs: Any) -> Response:
+        if self._is_async:
+            raise Exception("Invalid usage. Use get async")
         return self._instance.get(url, **kwargs)
+
+    async def request_async(self, method, url, **kwargs) -> Response:
+        if not self._is_async:
+            raise Exception("Invalid usage. Use request")
+        return await self._instance.request(method, url, **kwargs)
+
+
+    async def get_async(self, url: str, **kwargs: Any) -> Response:
+        if not self._is_async:
+            raise Exception("Invalid usage. Use get")
+        return await self._instance.get(url, **kwargs)
 
 
 def create_session(
@@ -159,12 +212,20 @@ def create_session(
             raise Exception("Not implemented")
         session = TLSRotating(proxies=proxies)
     else:
-        session = RequestsRotating(
-            proxies=proxies,
-            has_retry=has_retry,
-            delay=delay,
-            clear_cookies=clear_cookies,
-        )
+        if not is_async:
+            session = RequestsRotating(
+                proxies=proxies,
+                has_retry=has_retry,
+                delay=delay,
+                clear_cookies=clear_cookies,
+            )
+        else:
+            session = RequestsRotatingAsync(
+                proxies=proxies,
+                has_retry=has_retry,
+                delay=delay,
+                clear_cookies=clear_cookies,
+            )
 
     if ca_cert:
         session.verify = ca_cert

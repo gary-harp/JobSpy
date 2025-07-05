@@ -72,7 +72,7 @@ def fetch_page():
     print("wtf")
 
 async def fetch_company():
-    scraper = LinkedIn()
+    scraper = LinkedIn(is_async=True)
     name = 'microsoft'
     url = 'https://www.linkedin.com/company/microsoft'
     name = 'Ultron'
