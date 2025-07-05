@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import json
 import random
 import time
 from datetime import datetime
@@ -16,6 +17,7 @@ from requests import Response
 from jobspy.can_skip_job_post import CanSkipJobPost
 from jobspy.exception import LinkedInException
 from jobspy.is_seen import IsSeen
+from jobspy.linkedin.company import Company
 from jobspy.linkedin.constant import headers
 from jobspy.linkedin.util import (
     is_job_remote,
@@ -98,7 +100,7 @@ class LinkedIn(Scraper):
 
             max_page_fetch = scraper_input.results_wanted - len(job_list)
             max_page_fetch = min(max_page_fetch, MAX_RECORDS - start)
-            page_jobs = self.get_job_ads_page(scraper_input, start, can_skip, max_page_fetch)
+            page_jobs = self.get_job_ads_page_sync(scraper_input, start, can_skip, max_page_fetch)
             for job in page_jobs:
                 can_skip.add_seen(job.id)
             job_list += page_jobs
@@ -113,22 +115,22 @@ class LinkedIn(Scraper):
         return JobResponse(jobs=job_list)
 
 
-    def get_job_ads_page(self,
-                         scraper_input: ScraperInput,
-                         start: int,
-                         can_skip: CanSkipJobPost,
-                         max_page_fetch: Optional[int] = None) -> List[JobPost]:
-        request_params = self.build_search_request(scraper_input, start)
-        response = self.send_request_sync(request_params)
+    def get_job_ads_page_sync(self,
+                              scraper_input: ScraperInput,
+                              start: int,
+                              can_skip: CanSkipJobPost,
+                              max_page_fetch: Optional[int] = None) -> List[JobPost]:
+        request_params = self._build_search_request(scraper_input, start)
+        response = self._send_request_sync(request_params)
         if response is None:
             return []
-        return self.parse_search_response(response,
-                                          scraper_input,
-                                          can_skip, max_page_fetch)
+        return self._parse_search_response(response,
+                                           scraper_input,
+                                           can_skip, max_page_fetch)
 
-    def build_search_request(self,
-                             scraper_input: ScraperInput,
-                             start: int) -> dict:
+    def _build_search_request(self,
+                              scraper_input: ScraperInput,
+                              start: int) -> dict:
         seconds_old = (
             scraper_input.hours_old * 3600 if scraper_input.hours_old else None
         )
@@ -163,7 +165,7 @@ class LinkedIn(Scraper):
         }
         return request_params
 
-    def send_request_sync(self, request_params: dict) -> Optional[Response]:
+    def _send_request_sync(self, request_params: dict) -> Optional[Response]:
         try:
             response = self.session.request(**request_params)
             if response.status_code not in range(200, 400):
@@ -183,11 +185,11 @@ class LinkedIn(Scraper):
                 log.error(f"LinkedIn: {str(e)}")
             return None
 
-    def parse_search_response(self,
-                              response: Response,
-                              scraper_input: ScraperInput,
-                              can_skip: CanSkipJobPost,
-                              max_page_fetch: Optional[int] = None) -> List[JobPost]:
+    def _parse_search_response(self,
+                               response: Response,
+                               scraper_input: ScraperInput,
+                               can_skip: CanSkipJobPost,
+                               max_page_fetch: Optional[int] = None) -> List[JobPost]:
         seen_ids = set()
         job_list = []
         soup = BeautifulSoup(response.text, "html.parser")
@@ -217,6 +219,50 @@ class LinkedIn(Scraper):
                     raise LinkedInException(str(e))
         return job_list
 
+    def get_company_info_sync(self, company_name: str) -> Optional[Company]:
+        request_params = self._build_company_info_request(company_name)
+        response = self._send_request_sync(request_params)
+        if response is None:
+            return None
+        return self._parse_company_response(company_name, response)
+
+
+    def _build_company_info_request(self, company_name) -> dict:
+        request_params = {
+            'method' : 'GET',
+            'url': f"{self.base_url}/company/{company_name}",
+            'timeout' : 10
+        }
+        return request_params
+
+    def _parse_company_response(self, company_name: str, response: Response) -> Optional[Company]:
+        organization = None
+        try:
+            soup = BeautifulSoup(response.text, "html.parser")
+            script = soup.find('script', type='application/ld+json')
+            data = json.loads(script.string)
+            graph = data.get("@graph", None)
+            if graph is None:
+                raise Exception(f"graph key does not exist. data: {data}")
+            for i in range(len(graph)):
+                data_type = graph[i].get('@type', None)
+                if data_type is None:
+                    continue
+                if data_type == 'Organization':
+                    organization = Company()
+                    organization.name = graph[i].get('name', '')
+                    organization.url =  graph[i].get('url', '')
+                    organization.description =  graph[i].get('description', '')
+                    size = graph[i].get('numberOfEmployees', None)
+                    if size:
+                        size = size.get('value', None)
+                    if size and isinstance(size, int):
+                        organization.number_of_employees = size
+                    else:
+                        log.error(f"Unexpected number of employees format in company: {company_name}. Format: {graph[i]}")
+        except Exception as ex:
+            log.error(ex, f"Failed to parse company html for company: {company_name}")
+        return organization
 
     def _process_job(
         self, job_card: Tag, job_id: str, full_descr: bool

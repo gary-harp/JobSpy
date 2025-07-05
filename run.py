@@ -52,11 +52,30 @@ def fetch_page():
 
     can_skip = IsSeen()
     scraper = LinkedIn()
+    ad_count = 1
+    ad_dict = dict()
+    start = 0
+    for i in range(2):
+        results = scraper.get_job_ads_page_sync(scraper_input, start, can_skip)
+        received_ads = []
+        for job in results:
+            ad_number = ad_dict.get(job.id, None)
+            if ad_number is None:
+                ad_number = ad_count
+                ad_dict[job.id] = ad_number
+                ad_count += 1
+            received_ads.append(ad_number)
+        print(f"received_ads: {received_ads}")
+        start = 1
+    print("wtf")
 
-    results = scraper.get_job_ads_page(scraper_input, 0, can_skip)
+def fetch_company():
+    scraper = LinkedIn()
+    result = scraper.get_company_info_sync("microsoft")
     print("wtf")
 
 
 if __name__ == "__main__":
     #scrape_test_jobs()
-    fetch_page()
+    #fetch_page()
+    fetch_company()
