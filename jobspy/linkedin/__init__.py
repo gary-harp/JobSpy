@@ -75,9 +75,9 @@ class LinkedIn(Scraper):
             has_retry=True,
             delay=5,
             clear_cookies=True,
-            is_async=is_async
+            is_async=is_async,
+            headers=headers
         )
-        self.session.headers.update(headers)
         self.scraper_input = None
         self.country = "worldwide"
         self.job_url_direct_regex = re.compile(r'(?<=\?url=)[^"]+')
@@ -285,6 +285,7 @@ class LinkedIn(Scraper):
         return self._parse_company_response(company_name, response)
 
     async def get_company_info(self, company_name: str, company_url) -> Optional[Company]:
+        log.info(f"get_company_info called, company_name: {company_name}, url: {company_url}")
         request_params = self._build_company_info_request(company_name, company_url)
         response = await self._send_request_async(request_params)
         if response is None:

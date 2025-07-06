@@ -38,7 +38,8 @@ _Verify: TypeAlias = bool | str
 
 
 class RotatingProxySession:
-    def __init__(self, proxies=None):
+    def __init__(self, proxies=None, is_async = False):
+        self.is_async = is_async
         if isinstance(proxies, str):
             self.proxy_cycle = cycle([self.format_proxy(proxies)])
         elif isinstance(proxies, list):
@@ -50,14 +51,17 @@ class RotatingProxySession:
         else:
             self.proxy_cycle = None
 
-    @staticmethod
-    def format_proxy(proxy):
+
+    def format_proxy(self, proxy):
         """Utility method to format a proxy string into a dictionary."""
         if proxy.startswith("http://") or proxy.startswith("https://"):
             return {"http": proxy, "https": proxy}
         if proxy.startswith("socks5://"):
             return {"http": proxy, "https": proxy}
-        return {"http": f"http://{proxy}", "https": f"http://{proxy}"}
+        if not self.is_async:
+            return {"http": f"http://{proxy}", "https": f"http://{proxy}"}
+        else:
+            return {"http://": httpx.AsyncHTTPTransport(proxy=f"http://{proxy}"), "https://": httpx.AsyncHTTPTransport(proxy=f"http://{proxy}")}
 
 
 class RequestsRotating(RotatingProxySession, requests.Session):
@@ -93,12 +97,16 @@ class RequestsRotating(RotatingProxySession, requests.Session):
                 self.proxies = {}
         return requests.Session.request(self, method, url, **kwargs)
 
-class RequestsRotatingAsync(RotatingProxySession, httpx.AsyncClient):
-    def __init__(self, proxies=None, has_retry=False, delay=1, clear_cookies=False):
-        RotatingProxySession.__init__(self, proxies=proxies)
-        httpx.AsyncClient.__init__(self, transport=self.setup_session(has_retry, delay))
+class RequestsRotatingAsync(RotatingProxySession):
+
+
+    def __init__(self, headers, proxies=None, has_retry=False, delay=1, clear_cookies=False):
+        RotatingProxySession.__init__(self, proxies=proxies, is_async=True)
         self.clear_cookies = clear_cookies
+        self.has_retry = has_retry
+        self.delay = delay
         self.allow_redirects = True
+        self.headers = headers
 
     def setup_session(self, has_retry, delay) -> RetryTransport | None:
         if has_retry:
@@ -114,16 +122,19 @@ class RequestsRotatingAsync(RotatingProxySession, httpx.AsyncClient):
 
 
     async def request(self, method, url, **kwargs):
-        if self.clear_cookies:
-            self.cookies.clear()
 
         if self.proxy_cycle:
             next_proxy = next(self.proxy_cycle)
-            if next_proxy["http"] != "http://localhost":
+            http_proxy = next_proxy.get('http', None)
+            if not http_proxy:
+                http_proxy = next_proxy.get('http://', None)
+            if http_proxy is not None and http_proxy != "http://localhost":
                 self.proxies = next_proxy
             else:
                 self.proxies = {}
-        return await super().request(method, url, **kwargs)
+        async with httpx.AsyncClient(mounts=self.proxies, transport=self.setup_session(self.has_retry, self.delay)) as client:
+            client.headers.update(self.headers)
+            return await client.request(method, url, **kwargs)
 
 
 
@@ -215,7 +226,8 @@ def create_session(
     has_retry: bool = False,
     delay: int = 1,
     clear_cookies: bool = False,
-    is_async: bool = False
+    is_async: bool = False,
+    headers = None
 ) -> SessionAdapter:
     """
     Creates a requests session with optional tls, proxy, and retry settings.
@@ -235,6 +247,7 @@ def create_session(
             )
         else:
             session = RequestsRotatingAsync(
+                headers = headers,
                 proxies=proxies,
                 has_retry=has_retry,
                 delay=delay,

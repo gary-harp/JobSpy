@@ -1,5 +1,6 @@
 import asyncio
 import csv
+import logging
 import os
 from pathlib import Path
 from jobspy import scrape_jobs, ScraperInput, Site, Country, LinkedIn
@@ -73,7 +74,12 @@ async def fetch_page():
     print("wtf")
 
 async def fetch_company():
-    scraper = LinkedIn(is_async=True)
+    # working with proxies
+    #proxies = ["103.116.7.132:80"]
+    #proxies = ["170.114.46.245:80"]
+    proxies = None
+
+    scraper = LinkedIn(is_async=True, proxies=proxies)
     name = 'microsoft'
     url = 'https://www.linkedin.com/company/microsoft'
     name = 'Ultron'
@@ -84,7 +90,10 @@ async def fetch_company():
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.DEBUG)
+    httpx_logger = logging.getLogger("httpx")
+    httpx_logger.setLevel(logging.DEBUG)
     #scrape_test_jobs()
     #fetch_page()
     #fetch_company()
-    asyncio.run(fetch_page())
+    asyncio.run(fetch_company())
