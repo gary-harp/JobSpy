@@ -46,7 +46,7 @@ async def fetch_page():
         #job_type=job_type,
         #easy_apply=easy_apply,
         description_format=DescriptionFormat.MARKDOWN,
-        linkedin_fetch_description=True,
+        linkedin_fetch_description=False,
         results_wanted=20,
         #linkedin_company_ids=linkedin_company_ids,
         #offset=offset,
@@ -58,7 +58,7 @@ async def fetch_page():
     ad_count = 1
     ad_dict = dict()
     start = 0
-    for i in range(1):
+    for i in range(10):
         #results = scraper.get_job_ads_page_sync(scraper_input, start, can_skip)
         results = await scraper.get_job_ads_page(scraper_input, start, can_skip)
         received_ads = []
@@ -69,8 +69,9 @@ async def fetch_page():
                 ad_dict[job.id] = ad_number
                 ad_count += 1
             received_ads.append(ad_number)
-        print(f"received_ads: {received_ads}")
-        start = 1
+        print(f"start: {start}, received_ads: {received_ads}")
+        start += 1
+        await asyncio.sleep(2)
     print("wtf")
 
 async def fetch_company():
@@ -90,10 +91,10 @@ async def fetch_company():
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.DEBUG)
+    #logging.basicConfig(level=logging.DEBUG)
     httpx_logger = logging.getLogger("httpx")
-    httpx_logger.setLevel(logging.DEBUG)
+    #httpx_logger.setLevel(logging.DEBUG)
     #scrape_test_jobs()
     #fetch_page()
     #fetch_company()
-    asyncio.run(fetch_company())
+    asyncio.run(fetch_page())

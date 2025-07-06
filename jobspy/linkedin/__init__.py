@@ -219,9 +219,9 @@ class LinkedIn(Scraper):
             return response
         except Exception as e:
             if "Proxy responded with" in str(e):
-                log.error(f"LinkedIn: Bad proxy")
+                log.exception(f"LinkedIn: Bad proxy.")
             else:
-                log.error(f"LinkedIn: {str(e)}")
+                log.exception("LinkedIn: send request sync failed")
             return None
 
     async def _send_request_async(self, request_params: dict) -> Optional[Response]:
@@ -239,9 +239,9 @@ class LinkedIn(Scraper):
             return response
         except Exception as e:
             if "Proxy responded with" in str(e):
-                log.error(f"LinkedIn: Bad proxy")
+                log.exception(f"LinkedIn: Bad proxy.")
             else:
-                log.error(f"LinkedIn: {str(e)}")
+                log.exception(f"LinkedIn: Failed to send request async")
             return None
 
     def _parse_search_response(self,

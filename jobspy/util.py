@@ -122,17 +122,15 @@ class RequestsRotatingAsync(RotatingProxySession):
 
 
     async def request(self, method, url, **kwargs):
-
+        proxies = None
         if self.proxy_cycle:
             next_proxy = next(self.proxy_cycle)
             http_proxy = next_proxy.get('http', None)
             if not http_proxy:
                 http_proxy = next_proxy.get('http://', None)
             if http_proxy is not None and http_proxy != "http://localhost":
-                self.proxies = next_proxy
-            else:
-                self.proxies = {}
-        async with httpx.AsyncClient(mounts=self.proxies, transport=self.setup_session(self.has_retry, self.delay)) as client:
+                proxies = next_proxy
+        async with httpx.AsyncClient(mounts=proxies, transport=self.setup_session(self.has_retry, self.delay)) as client:
             client.headers.update(self.headers)
             return await client.request(method, url, **kwargs)
 
